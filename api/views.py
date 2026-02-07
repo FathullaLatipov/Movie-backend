@@ -132,3 +132,55 @@ def movie_watch(request: Request, movie_id: int):
 def genre_list(request: Request):
     """Список доступных жанров."""
     return Response({"genres": GENRE_NAMES})
+
+
+@swagger_auto_schema(
+    method="get",
+    operation_summary="Поиск по жанру",
+    operation_description="Эндпоинт для фронтенда: api/search_by_genre?genre_name=триллер",
+    manual_parameters=[
+        openapi.Parameter("genre_name", openapi.IN_QUERY, description="Название жанра (напр. триллер, комедия)", type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter("year", openapi.IN_QUERY, description="Год или диапазон (напр. 2020 или 2015-2021)", type=openapi.TYPE_STRING),
+    ],
+)
+@api_view(["GET"])
+def search_by_genre(request: Request):
+    """
+    Поиск фильмов по жанру.
+    Запрос: GET api/search_by_genre?genre_name=триллер&year=2020 (year необязателен).
+    """
+    genre_name = request.query_params.get("genre_name", "").strip()
+    if not genre_name:
+        return Response(
+            {"detail": "Укажите параметр genre_name (напр. триллер, комедия)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    year = request.query_params.get("year", "").strip() or None
+    if year and "-" in year:
+        parts = year.split("-")
+        if len(parts) != 2:
+            return Response(
+                {"detail": "Год: один год (2020) или диапазон (2016-2020)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            start, end = int(parts[0]), int(parts[1])
+            if start > end:
+                raise ValueError
+        except ValueError:
+            return Response(
+                {"detail": "Некорректный диапазон года."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    elif year and not year.isdigit():
+        return Response(
+            {"detail": "Год должен быть числом или диапазоном."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        return Response(services.search_by_genre(genre_name, year))
+    except requests.HTTPError as e:
+        return Response(
+            {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )

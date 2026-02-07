@@ -8,4 +8,5 @@ urlpatterns = [
     path("movies/<int:movie_id>", views.movie_detail),
     path("movies/<int:movie_id>/watch", views.movie_watch),
     path("genres", views.genre_list),
+    path("search_by_genre", views.search_by_genre),
 ]
