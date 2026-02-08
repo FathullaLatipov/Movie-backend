@@ -18,5 +18,7 @@ urlpatterns = [
     # Оба варианта пути — с префиксом /api и без (для разного деплоя/прокси)
     path("search_by_genre", api_views.search_by_genre),
     path("api/search_by_genre", api_views.search_by_genre),
+    path("poster", api_views.poster_proxy),
+    path("api/poster", api_views.poster_proxy),
     path("api/v1/", include("api.urls")),
 ]

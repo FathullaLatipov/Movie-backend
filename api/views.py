@@ -1,3 +1,6 @@
+from urllib.parse import urlparse
+
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -7,6 +10,9 @@ from drf_yasg import openapi
 import requests
 
 from . import services
+
+# Домен, с которого разрешено проксировать постеры (избегаем ERR_BLOCKED_BY_CLIENT в браузере)
+ALLOWED_POSTER_HOSTS = ("avatars.mds.yandex.net", "st.kp.yandex.net", "www.kinopoisk.ru")
 
 GENRE_NAMES = [
     "Боевик", "Комедия", "Фэнтези", "Драма", "Криминал",
@@ -184,3 +190,29 @@ def search_by_genre(request: Request):
             {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
+
+
+def poster_proxy(request):
+    """
+    Прокси постеров с Yandex/Kinopoisk, чтобы обойти блокировку в браузере (ERR_BLOCKED_BY_CLIENT).
+    GET ?url=<encoded_image_url>
+    """
+    url = request.GET.get("url", "").strip()
+    if not url:
+        return HttpResponse("Missing url", status=400)
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or parsed.netloc not in ALLOWED_POSTER_HOSTS:
+            return HttpResponse("Forbidden", status=403)
+    except Exception:
+        return HttpResponse("Invalid url", status=400)
+    try:
+        resp = requests.get(url, timeout=15, stream=True)
+        resp.raise_for_status()
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        content = resp.content
+    except requests.RequestException:
+        return HttpResponse("Upstream error", status=502)
+    response = HttpResponse(content, content_type=content_type)
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
