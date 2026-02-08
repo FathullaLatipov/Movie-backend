@@ -7,6 +7,7 @@ import requests
 
 KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie"
 FILMS_STORAGE_BASE = os.environ.get("FILMS_STORAGE_BASE", "https://flcksbr.top/film/")
+KINOPOISK_TIMEOUT = 30  # Кинопоиск иногда отвечает долго
 
 def _headers():
     key = os.environ.get("KINOPOISK_API_KEY", "")
@@ -17,7 +18,7 @@ def search_by_query(q: str):
     """Поиск по названию, до 10 результатов."""
     encoded = quote(q)
     url = f"{KINOPOISK_API_URL}/search?page=1&limit=10&query={encoded}"
-    resp = requests.get(url, headers=_headers(), timeout=15)
+    resp = requests.get(url, headers=_headers(), timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -34,7 +35,7 @@ def search_by_genre(genre_name: str, year: str | None):
     }
     if year:
         params["year"] = year
-    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=15)
+    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
     genre_lower = genre_name.lower()
@@ -56,7 +57,7 @@ def search_by_genre(genre_name: str, year: str | None):
 def get_movie_details(movie_id: int):
     """Полная информация о фильме по ID."""
     url = f"{KINOPOISK_API_URL}/{movie_id}"
-    resp = requests.get(url, headers=_headers(), timeout=15)
+    resp = requests.get(url, headers=_headers(), timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
