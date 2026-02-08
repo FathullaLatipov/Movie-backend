@@ -3,9 +3,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-change-in-production")
+SECRET_KEY = 'dasfybasd80faasdfgasdfasdf7sdfasdf'
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
@@ -65,7 +65,9 @@ REST_FRAMEWORK = {
 
 # CORS — фронт на Vite и Vercel
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
     "http://localhost:5174",
+    "http://127.0.0.1:5173",
     "https://vkluchilchill.vercel.app",
     "https://movie-frontend-rosy.vercel.app",
 ]

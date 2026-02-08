@@ -9,7 +9,7 @@ KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie"
 FILMS_STORAGE_BASE = os.environ.get("FILMS_STORAGE_BASE", "https://flcksbr.top/film/")
 
 def _headers():
-    key = "RNGX6C9-AVH4RKV-QRB6PCH-V05VDJN"
+    key = os.environ.get("KINOPOISK_API_KEY", "")
     return {"X-API-KEY": key} if key else {}
 
 
