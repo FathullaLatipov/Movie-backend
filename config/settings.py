@@ -3,6 +3,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Загружаем .env из корня проекта (Django сам .env не читает)
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    from dotenv import load_dotenv
+    load_dotenv(_env_file)
+
 SECRET_KEY = 'dasfybasd80faasdfgasdfasdf7sdfasdf'
 
 DEBUG = True
