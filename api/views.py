@@ -1,7 +1,8 @@
 import os
+import time
 from urllib.parse import urlparse
 
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -230,7 +231,7 @@ def coming_soon(request: Request):
 
 def poster_proxy(request):
     """
-    Прокси постеров с Yandex/Kinopoisk, чтобы обойти блокировку в браузере (ERR_BLOCKED_BY_CLIENT).
+    Прокси постеров (TMDB, Yandex и т.д.). При ошибке загрузки — редирект на оригинальный URL.
     GET ?url=<encoded_image_url>
     """
     url = request.GET.get("url", "").strip()
@@ -242,17 +243,27 @@ def poster_proxy(request):
             return HttpResponse("Forbidden", status=403)
     except Exception:
         return HttpResponse("Invalid url", status=400)
-    try:
-        verify = True
-        if parsed.netloc == "image.tmdb.org":
-            v = os.environ.get("TMDB_SSL_VERIFY", "1").strip().lower()
-            verify = v not in ("0", "false", "no", "off")
-        resp = requests.get(url, timeout=15, stream=True, verify=verify)
-        resp.raise_for_status()
-        content_type = resp.headers.get("Content-Type", "image/jpeg")
-        content = resp.content
-    except requests.RequestException:
-        return HttpResponse("Upstream error", status=502)
-    response = HttpResponse(content, content_type=content_type)
-    response["Cache-Control"] = "public, max-age=86400"
-    return response
+
+    verify = True
+    if parsed.netloc == "image.tmdb.org":
+        v = os.environ.get("TMDB_SSL_VERIFY", "1").strip().lower()
+        verify = v not in ("0", "false", "no", "off")
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, timeout=25, stream=True, verify=verify)
+            resp.raise_for_status()
+            content_type = resp.headers.get("Content-Type", "image/jpeg")
+            content = resp.content
+            response = HttpResponse(content, content_type=content_type)
+            response["Cache-Control"] = "public, max-age=86400"
+            return response
+        except requests.RequestException as e:
+            last_error = e
+            if attempt < 2:
+                time.sleep(1)
+            continue
+
+    # После 3 неудач — редирект на оригинальный URL (браузер попробует загрузить сам)
+    return HttpResponseRedirect(url)
