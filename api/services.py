@@ -1,167 +1,160 @@
 """
-Сервис для работы с API Кинопоиска.
+Сервис для работы с API The Movie Database (TMDB).
+Документация: https://developer.themoviedb.org/docs
 """
 import os
 from urllib.parse import quote
 import requests
 
-KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.4/movie"
+TMDB_BASE = "https://api.themoviedb.org/3"
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 FILMS_STORAGE_BASE = os.environ.get("FILMS_STORAGE_BASE", "https://flcksbr.top/film/")
-KINOPOISK_TIMEOUT = 30  # Кинопоиск иногда отвечает долго
+TMDB_TIMEOUT = 15
 
-def _headers():
-    """По документации kinopoisk.dev: Authorization: Bearer <token>. Поддержка и X-API-KEY."""
-    key = (os.environ.get("KINOPOISK_API_KEY") or os.environ.get("KINOPOISK_TOKEN") or "").strip()
-    if not key:
-        return {}
+def _api_key():
+    return (os.environ.get("TMDB_API_KEY") or os.environ.get("TMDB_API_KEY_V3") or "").strip()
+
+def _params(extra=None):
+    p = {"api_key": _api_key(), "language": "ru-RU"}
+    if extra:
+        p.update(extra)
+    return p
+
+
+def _poster_url(path):
+    if not path:
+        return None
+    return f"{TMDB_IMAGE_BASE}{path}" if path.startswith("/") else path
+
+
+def _movie_item(item: dict, is_tv: bool = False) -> dict:
+    """Приводим элемент TMDB к формату для фронта (id, name, alternativeName, year, votes, poster)."""
+    if is_tv:
+        name = item.get("name") or item.get("original_name")
+        date_str = item.get("first_air_date") or ""
+    else:
+        name = item.get("title") or item.get("original_title")
+        date_str = item.get("release_date") or ""
+    year = int(date_str[:4]) if len(date_str) >= 4 else None
     return {
-        "Authorization": f"Bearer {key}",
-        "X-API-KEY": key,
+        "id": item.get("id"),
+        "name": name,
+        "alternativeName": item.get("original_title") or item.get("original_name"),
+        "year": year,
+        "votes": item.get("vote_count") or 0,
+        "poster": _poster_url(item.get("poster_path")),
     }
 
 
-def search_by_query(q: str):
-    """Поиск по названию, до 10 результатов."""
-    encoded = quote(q)
-    url = f"{KINOPOISK_API_URL}/search?page=1&limit=10&query={encoded}"
-    resp = requests.get(url, headers=_headers(), timeout=KINOPOISK_TIMEOUT)
+def _results(items: list, is_tv: bool = False) -> list:
+    return [_movie_item(x, is_tv=is_tv) for x in (items or [])]
+
+
+def _get(url: str, params: dict):
+    resp = requests.get(url, params=params, timeout=TMDB_TIMEOUT)
     resp.raise_for_status()
-    return resp.json()
+    return resp.json() or {}
 
 
-def search_by_genre(genre_name: str, year: str | None):
-    """Поиск по жанру и году, до 20 результатов по популярности."""
-    params = {
-        "genres.name": genre_name.lower(),
-        "limit": 20,
-        "notNullFields": ["poster.url", "name", "votes.kp", "genres.name"],
-        "selectFields": ["id", "name", "alternativeName", "year", "votes", "poster", "genres"],
-        "sortField": ["votes.kp"],
-        "sortType": ["-1"],
-    }
-    if year:
-        params["year"] = year
-    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-    resp.raise_for_status()
-    data = resp.json()
-    genre_lower = genre_name.lower()
-    results = []
-    for film in data.get("docs", []):
-        genres = [g.get("name", "").lower() for g in film.get("genres", [])]
-        if genre_lower in genres:
-            results.append({
-                "id": film["id"],
-                "alternativeName": film.get("alternativeName"),
-                "name": film.get("name"),
-                "year": film.get("year"),
-                "votes": film.get("votes", {}).get("kp", 0),
-                "poster": film.get("poster", {}).get("url"),
-            })
-    return {"results_count": len(results), "results": results}
-
-
-def _movie_list_params(limit: int, sort_by_votes: bool = True, type_filter: str | None = None, year: str | None = None):
-    """Общие параметры для списка фильмов/сериалов (документация kinopoisk.dev)."""
-    params = {
-        "limit": limit,
-        "notNullFields": ["poster.url", "name", "votes.kp"],
-        "selectFields": ["id", "name", "alternativeName", "year", "votes", "poster", "type"],
-        "sortField": ["votes.kp"] if sort_by_votes else ["year"],
-        "sortType": ["-1"],
-    }
-    if type_filter:
-        params["type"] = type_filter
-    if year:
-        params["year"] = year
-    return params
-
-
-def _docs_to_results(docs: list) -> list:
-    """Преобразование docs из ответа API в единый формат для фронта."""
-    return [
-        {
-            "id": f.get("id"),
-            "alternativeName": f.get("alternativeName"),
-            "name": f.get("name"),
-            "year": f.get("year"),
-            "votes": f.get("votes", {}).get("kp", 0) if isinstance(f.get("votes"), dict) else 0,
-            "poster": f.get("poster", {}).get("url") if isinstance(f.get("poster"), dict) else (f.get("poster") or None),
-        }
-        for f in (docs or [])
-    ]
-
-
-def _get_docs(data: dict) -> list:
-    """Из ответа API достаём список фильмов (docs / movies / data)."""
-    if not data:
-        return []
-    return data.get("docs") or data.get("movies") or data.get("data") or []
-
+# --- Блоки главной ---
 
 def get_popular_now(limit: int = 12):
-    """Популярное сейчас — топ по голосам (фильмы и сериалы)."""
-    params = _movie_list_params(limit=limit)
-    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-    resp.raise_for_status()
-    data = resp.json() or {}
-    docs = _get_docs(data)
-    return {"results": _docs_to_results(docs[:limit])}
+    """Популярное сейчас — тренды за день (фильмы + сериалы)."""
+    data = _get(f"{TMDB_BASE}/trending/all/day", _params())
+    items = data.get("results", [])[:limit]
+    out = []
+    for x in items:
+        is_tv = x.get("media_type") == "tv"
+        out.append(_movie_item(x, is_tv=is_tv))
+    return {"results": out}
 
 
 def get_popular_movies(limit: int = 4):
-    """Популярные фильмы — только type=movie, по голосам."""
-    params = _movie_list_params(limit=limit * 2, type_filter="movie")
-    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-    resp.raise_for_status()
-    docs = _get_docs(resp.json() or {})
-    if len(docs) < limit:
-        params = _movie_list_params(limit=50)
-        resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-        resp.raise_for_status()
-        docs = [d for d in _get_docs(resp.json() or {}) if d.get("type") == "movie"][:limit]
-    else:
-        docs = docs[:limit]
-    return {"results": _docs_to_results(docs)}
+    """Популярные фильмы."""
+    data = _get(f"{TMDB_BASE}/movie/popular", _params({"page": 1}))
+    items = data.get("results", [])[:limit]
+    return {"results": _results(items, is_tv=False)}
 
 
 def get_popular_series(limit: int = 4):
-    """Популярные сериалы — только type=tv-series, по голосам."""
-    params = _movie_list_params(limit=limit * 2, type_filter="tv-series")
-    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-    resp.raise_for_status()
-    docs = _get_docs(resp.json() or {})
-    if len(docs) < limit:
-        params = _movie_list_params(limit=50)
-        resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-        resp.raise_for_status()
-        docs = [d for d in _get_docs(resp.json() or {}) if d.get("type") == "tv-series"][:limit]
-    else:
-        docs = docs[:limit]
-    return {"results": _docs_to_results(docs)}
+    """Популярные сериалы."""
+    data = _get(f"{TMDB_BASE}/tv/popular", _params({"page": 1}))
+    items = data.get("results", [])[:limit]
+    return {"results": _results(items, is_tv=True)}
 
 
 def get_coming_soon(limit: int = 4):
-    """Скоро на экранах — премьеры (текущий и следующий год), по голосам."""
-    from datetime import date
-    current_year = str(date.today().year)
-    next_year = str(date.today().year + 1)
-    params = _movie_list_params(limit=limit * 2, year=f"{current_year}-{next_year}")
-    resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
-    resp.raise_for_status()
-    docs = _get_docs(resp.json() or {})[:limit]
-    return {"results": _docs_to_results(docs)}
+    """Скоро в кино — премьеры (TMDB movie/upcoming)."""
+    data = _get(f"{TMDB_BASE}/movie/upcoming", _params({"page": 1}))
+    items = data.get("results", [])[:limit]
+    return {"results": _results(items, is_tv=False)}
 
 
-def get_movie_details(movie_id: int):
-    """Полная информация о фильме по ID."""
-    url = f"{KINOPOISK_API_URL}/{movie_id}"
-    resp = requests.get(url, headers=_headers(), timeout=KINOPOISK_TIMEOUT)
-    resp.raise_for_status()
-    return resp.json()
+# --- Поиск по жанру (TMDB: discover + genre id) ---
+
+# Маппинг названий жанров на id TMDB (movie) — можно расширить
+TMDB_GENRE_IDS = {
+    "приключения": 12,
+    "боевик": 28,
+    "комедия": 35,
+    "фантастика": 878,
+    "триллер": 53,
+    "драма": 18,
+    "криминал": 80,
+    "мелодрама": 10749,
+    "ужасы": 27,
+    "документальный": 99,
+    "фэнтези": 14,
+}
 
 
-def get_watch_link(movie_id: int):
-    """Детали фильма и ссылка на просмотр."""
-    details = get_movie_details(movie_id)
+def search_by_genre(genre_name: str, year: str | None):
+    """Поиск фильмов по жанру (и опционально году). До 20 результатов."""
+    name = (genre_name or "").strip().lower()
+    genre_id = TMDB_GENRE_IDS.get(name)
+    if not genre_id:
+        return {"results_count": 0, "results": []}
+    params = _params({"with_genres": genre_id, "page": 1, "sort_by": "popularity.desc"})
+    if year:
+        if "-" in year:
+            parts = year.split("-")
+            if len(parts) == 2:
+                params["primary_release_date.gte"] = f"{parts[0].strip()}-01-01"
+                params["primary_release_date.lte"] = f"{parts[1].strip()}-12-31"
+        else:
+            params["primary_release_year"] = year.strip()
+    data = _get(f"{TMDB_BASE}/discover/movie", params)
+    items = data.get("results", [])[:20]
+    return {"results_count": len(items), "results": _results(items, is_tv=False)}
+
+
+def search_by_query(q: str):
+    """Поиск по названию (мульти: фильмы + сериалы), до 10 результатов."""
+    if not (q or "").strip():
+        return {"results": []}
+    data = _get(f"{TMDB_BASE}/search/multi", _params({"query": q.strip(), "page": 1}))
+    items = []
+    for x in data.get("results", []):
+        if x.get("media_type") not in ("movie", "tv"):
+            continue
+        is_tv = x.get("media_type") == "tv"
+        items.append(_movie_item(x, is_tv=is_tv))
+        if len(items) >= 10:
+            break
+    return {"results": items}
+
+
+def get_movie_details(movie_id: int, is_tv: bool = False):
+    """Полная информация о фильме/сериале по ID."""
+    segment = "tv" if is_tv else "movie"
+    data = _get(f"{TMDB_BASE}/{segment}/{movie_id}", _params())
+    if data.get("poster_path"):
+        data["poster_url"] = _poster_url(data["poster_path"])
+    return data
+
+
+def get_watch_link(movie_id: int, is_tv: bool = False):
+    """Детали и ссылка на просмотр."""
+    details = get_movie_details(movie_id, is_tv=is_tv)
     details["view_link"] = f"{FILMS_STORAGE_BASE}{movie_id}"
     return details

@@ -11,8 +11,8 @@ import requests
 
 from . import services
 
-# Домен, с которого разрешено проксировать постеры (избегаем ERR_BLOCKED_BY_CLIENT в браузере)
-ALLOWED_POSTER_HOSTS = ("avatars.mds.yandex.net", "st.kp.yandex.net", "www.kinopoisk.ru")
+# Домены, с которых разрешено проксировать постеры (избегаем ERR_BLOCKED_BY_CLIENT в браузере)
+ALLOWED_POSTER_HOSTS = ("avatars.mds.yandex.net", "st.kp.yandex.net", "www.kinopoisk.ru", "image.tmdb.org")
 
 GENRE_NAMES = [
     "Боевик", "Комедия", "Фэнтези", "Драма", "Криминал",
@@ -52,7 +52,7 @@ def movie_list(request: Request):
             return Response(services.search_by_query(q))
         except requests.HTTPError as e:
             return Response(
-                {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+                {"detail": f"Ошибка API TMDB: {e.response.status_code}"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
@@ -83,7 +83,7 @@ def movie_list(request: Request):
             return Response(services.search_by_genre(genre, year))
         except requests.HTTPError as e:
             return Response(
-                {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+                {"detail": f"Ошибка API TMDB: {e.response.status_code}"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
@@ -96,7 +96,7 @@ def movie_list(request: Request):
 @swagger_auto_schema(
     method="get",
     operation_summary="Детали фильма",
-    operation_description="Полная информация о фильме по ID с Кинопоиска.",
+    operation_description="Полная информация о фильме/сериале по ID (TMDB).",
 )
 @api_view(["GET"])
 def movie_detail(request: Request, movie_id: int):
@@ -187,44 +187,44 @@ def search_by_genre(request: Request):
         return Response(services.search_by_genre(genre_name, year))
     except requests.HTTPError as e:
         return Response(
-            {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+            {"detail": f"Ошибка API TMDB: {e.response.status_code}"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
 
 
-def _kinopoisk_response(service_call):
-    """Вызов сервиса Кинопоиска: при 401/ошибке возвращаем 200 с пустыми results, чтобы фронт не падал."""
+def _api_response(service_call):
+    """Вызов сервиса TMDB: при 401/ошибке возвращаем 200 с пустыми results, чтобы фронт не падал."""
     try:
         return Response(service_call())
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else 502
         if code == 401:
-            return Response({"results": [], "detail": "Неверный или отсутствующий KINOPOISK_API_KEY на сервере"})
-        return Response({"results": [], "detail": f"Ошибка API Кинопоиска: {code}"})
+            return Response({"results": [], "detail": "Неверный или отсутствующий TMDB_API_KEY на сервере"})
+        return Response({"results": [], "detail": f"Ошибка API TMDB: {code}"})
 
 
 @api_view(["GET"])
 def popular_now(request: Request):
     """Популярное сейчас — топ по голосам."""
-    return _kinopoisk_response(lambda: services.get_popular_now(limit=12))
+    return _api_response(lambda: services.get_popular_now(limit=12))
 
 
 @api_view(["GET"])
 def popular_movies(request: Request):
     """Популярные фильмы (только фильмы)."""
-    return _kinopoisk_response(lambda: services.get_popular_movies(limit=4))
+    return _api_response(lambda: services.get_popular_movies(limit=4))
 
 
 @api_view(["GET"])
 def popular_series(request: Request):
     """Популярные сериалы (только сериалы)."""
-    return _kinopoisk_response(lambda: services.get_popular_series(limit=4))
+    return _api_response(lambda: services.get_popular_series(limit=4))
 
 
 @api_view(["GET"])
 def coming_soon(request: Request):
     """Скоро на экранах — премьеры."""
-    return _kinopoisk_response(lambda: services.get_coming_soon(limit=4))
+    return _api_response(lambda: services.get_coming_soon(limit=4))
 
 
 def poster_proxy(request):
