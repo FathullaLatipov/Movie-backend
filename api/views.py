@@ -192,6 +192,54 @@ def search_by_genre(request: Request):
         )
 
 
+@api_view(["GET"])
+def popular_now(request: Request):
+    """Популярное сейчас — топ по голосам."""
+    try:
+        return Response(services.get_popular_now(limit=12))
+    except requests.HTTPError as e:
+        return Response(
+            {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+
+@api_view(["GET"])
+def popular_movies(request: Request):
+    """Популярные фильмы (только фильмы)."""
+    try:
+        return Response(services.get_popular_movies(limit=4))
+    except requests.HTTPError as e:
+        return Response(
+            {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+
+@api_view(["GET"])
+def popular_series(request: Request):
+    """Популярные сериалы (только сериалы)."""
+    try:
+        return Response(services.get_popular_series(limit=4))
+    except requests.HTTPError as e:
+        return Response(
+            {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+
+@api_view(["GET"])
+def coming_soon(request: Request):
+    """Скоро на экранах — премьеры."""
+    try:
+        return Response(services.get_coming_soon(limit=4))
+    except requests.HTTPError as e:
+        return Response(
+            {"detail": f"Ошибка API Кинопоиска: {e.response.status_code}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+
 def poster_proxy(request):
     """
     Прокси постеров с Yandex/Kinopoisk, чтобы обойти блокировку в браузере (ERR_BLOCKED_BY_CLIENT).
