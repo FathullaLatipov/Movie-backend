@@ -1,3 +1,4 @@
+import os
 from urllib.parse import urlparse
 
 from django.http import HttpResponse
@@ -242,7 +243,11 @@ def poster_proxy(request):
     except Exception:
         return HttpResponse("Invalid url", status=400)
     try:
-        resp = requests.get(url, timeout=15, stream=True)
+        verify = True
+        if parsed.netloc == "image.tmdb.org":
+            v = os.environ.get("TMDB_SSL_VERIFY", "1").strip().lower()
+            verify = v not in ("0", "false", "no", "off")
+        resp = requests.get(url, timeout=15, stream=True, verify=verify)
         resp.raise_for_status()
         content_type = resp.headers.get("Content-Type", "image/jpeg")
         content = resp.content

@@ -27,9 +27,15 @@ def _params(extra=None):
 
 
 def _poster_url(path):
+    if not path or not isinstance(path, str):
+        return None
+    path = path.strip()
     if not path:
         return None
-    return f"{TMDB_IMAGE_BASE}{path}" if path.startswith("/") else path
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    prefix = path if path.startswith("/") else f"/{path}"
+    return f"{TMDB_IMAGE_BASE}{prefix}"
 
 
 def _movie_item(item: dict, is_tv: bool = False) -> dict:
