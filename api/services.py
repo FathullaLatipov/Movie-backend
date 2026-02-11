@@ -81,8 +81,15 @@ def _get(url: str, params: dict):
 
 # --- Блоки главной ---
 
+def _empty_results(detail: str = "TMDB_API_KEY не задан"):
+    """Возврат пустых results без запроса к TMDB (нет ключа или по требованию)."""
+    return {"results": [], "detail": detail}
+
+
 def get_popular_now(limit: int = 12):
     """Популярное сейчас — тренды за день (фильмы + сериалы)."""
+    if not _api_key():
+        return _empty_results()
     data = _get(f"{TMDB_BASE}/trending/all/day", _params())
     items = data.get("results") or []
     out = []
@@ -98,6 +105,8 @@ def get_popular_now(limit: int = 12):
 
 def get_popular_movies(limit: int = 4):
     """Популярные фильмы."""
+    if not _api_key():
+        return _empty_results()
     data = _get(f"{TMDB_BASE}/movie/popular", _params({"page": 1}))
     items = data.get("results", [])[:limit]
     return {"results": _results(items, is_tv=False)}
@@ -105,6 +114,8 @@ def get_popular_movies(limit: int = 4):
 
 def get_popular_series(limit: int = 4):
     """Популярные сериалы."""
+    if not _api_key():
+        return _empty_results()
     data = _get(f"{TMDB_BASE}/tv/popular", _params({"page": 1}))
     items = data.get("results", [])[:limit]
     return {"results": _results(items, is_tv=True)}
@@ -112,6 +123,8 @@ def get_popular_series(limit: int = 4):
 
 def get_coming_soon(limit: int = 4):
     """Скоро в кино — премьеры (TMDB movie/upcoming)."""
+    if not _api_key():
+        return _empty_results()
     data = _get(f"{TMDB_BASE}/movie/upcoming", _params({"page": 1}))
     items = data.get("results", [])[:limit]
     return {"results": _results(items, is_tv=False)}
