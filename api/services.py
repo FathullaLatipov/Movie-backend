@@ -14,6 +14,11 @@ TMDB_TIMEOUT = 15
 def _api_key():
     return (os.environ.get("TMDB_API_KEY") or os.environ.get("TMDB_API_KEY_V3") or "").strip()
 
+def _ssl_verify():
+    """Проверка SSL. Отключить (False) при SSLError из-за прокси/фаервола: TMDB_SSL_VERIFY=0"""
+    v = os.environ.get("TMDB_SSL_VERIFY", "1").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
 def _params(extra=None):
     p = {"api_key": _api_key(), "language": "ru-RU"}
     if extra:
@@ -51,7 +56,7 @@ def _results(items: list, is_tv: bool = False) -> list:
 
 
 def _get(url: str, params: dict):
-    resp = requests.get(url, params=params, timeout=TMDB_TIMEOUT)
+    resp = requests.get(url, params=params, timeout=TMDB_TIMEOUT, verify=_ssl_verify())
     resp.raise_for_status()
     return resp.json() or {}
 
