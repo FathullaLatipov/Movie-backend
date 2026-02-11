@@ -38,15 +38,22 @@ def _poster_url(path):
     return f"{TMDB_IMAGE_BASE}{prefix}"
 
 
-def _movie_item(item: dict, is_tv: bool = False) -> dict:
+def _movie_item(item: dict, is_tv: bool = False) -> dict | None:
     """Приводим элемент TMDB к формату для фронта (id, name, alternativeName, year, votes, poster)."""
+    if not item or not isinstance(item, dict):
+        return None
     if is_tv:
         name = item.get("name") or item.get("original_name")
         date_str = item.get("first_air_date") or ""
     else:
         name = item.get("title") or item.get("original_title")
         date_str = item.get("release_date") or ""
-    year = int(date_str[:4]) if len(date_str) >= 4 else None
+    year = None
+    if date_str and len(str(date_str)) >= 4:
+        try:
+            year = int(str(date_str)[:4])
+        except (ValueError, TypeError):
+            pass
     return {
         "id": item.get("id"),
         "name": name,
@@ -58,7 +65,12 @@ def _movie_item(item: dict, is_tv: bool = False) -> dict:
 
 
 def _results(items: list, is_tv: bool = False) -> list:
-    return [_movie_item(x, is_tv=is_tv) for x in (items or [])]
+    out = []
+    for x in items or []:
+        row = _movie_item(x, is_tv=is_tv)
+        if row is not None:
+            out.append(row)
+    return out
 
 
 def _get(url: str, params: dict):
@@ -72,11 +84,15 @@ def _get(url: str, params: dict):
 def get_popular_now(limit: int = 12):
     """Популярное сейчас — тренды за день (фильмы + сериалы)."""
     data = _get(f"{TMDB_BASE}/trending/all/day", _params())
-    items = data.get("results", [])[:limit]
+    items = data.get("results") or []
     out = []
-    for x in items:
+    for x in items[:limit]:
+        if not x or not isinstance(x, dict):
+            continue
         is_tv = x.get("media_type") == "tv"
-        out.append(_movie_item(x, is_tv=is_tv))
+        row = _movie_item(x, is_tv=is_tv)
+        if row is not None:
+            out.append(row)
     return {"results": out}
 
 

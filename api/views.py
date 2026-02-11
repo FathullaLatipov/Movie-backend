@@ -195,7 +195,7 @@ def search_by_genre(request: Request):
 
 
 def _api_response(service_call):
-    """Вызов сервиса TMDB: при 401/ошибке возвращаем 200 с пустыми results, чтобы фронт не падал."""
+    """Вызов сервиса TMDB: при любой ошибке возвращаем 200 с пустыми results, чтобы фронт не падал."""
     try:
         return Response(service_call())
     except requests.HTTPError as e:
@@ -203,6 +203,11 @@ def _api_response(service_call):
         if code == 401:
             return Response({"results": [], "detail": "Неверный или отсутствующий TMDB_API_KEY на сервере"})
         return Response({"results": [], "detail": f"Ошибка API TMDB: {code}"})
+    except Exception as e:
+        return Response(
+            {"results": [], "detail": f"Ошибка сервера: {type(e).__name__}"},
+            status=status.HTTP_200_OK,
+        )
 
 
 @api_view(["GET"])
