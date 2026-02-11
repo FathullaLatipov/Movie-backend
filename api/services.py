@@ -10,8 +10,14 @@ FILMS_STORAGE_BASE = os.environ.get("FILMS_STORAGE_BASE", "https://flcksbr.top/f
 KINOPOISK_TIMEOUT = 30  # Кинопоиск иногда отвечает долго
 
 def _headers():
-    key = os.environ.get("KINOPOISK_API_KEY", "")
-    return {"X-API-KEY": key} if key else {}
+    """По документации kinopoisk.dev: Authorization: Bearer <token>. Поддержка и X-API-KEY."""
+    key = (os.environ.get("KINOPOISK_API_KEY") or os.environ.get("KINOPOISK_TOKEN") or "").strip()
+    if not key:
+        return {}
+    return {
+        "Authorization": f"Bearer {key}",
+        "X-API-KEY": key,
+    }
 
 
 def search_by_query(q: str):
@@ -55,7 +61,7 @@ def search_by_genre(genre_name: str, year: str | None):
 
 
 def _movie_list_params(limit: int, sort_by_votes: bool = True, type_filter: str | None = None, year: str | None = None):
-    """Общие параметры для списка фильмов/сериалов."""
+    """Общие параметры для списка фильмов/сериалов (документация kinopoisk.dev)."""
     params = {
         "limit": limit,
         "notNullFields": ["poster.url", "name", "votes.kp"],
@@ -64,7 +70,7 @@ def _movie_list_params(limit: int, sort_by_votes: bool = True, type_filter: str 
         "sortType": ["-1"],
     }
     if type_filter:
-        params["type"] = type_filter  # "movie" | "tv-series" | "cartoon" и т.д.
+        params["type"] = type_filter
     if year:
         params["year"] = year
     return params
@@ -78,11 +84,18 @@ def _docs_to_results(docs: list) -> list:
             "alternativeName": f.get("alternativeName"),
             "name": f.get("name"),
             "year": f.get("year"),
-            "votes": f.get("votes", {}).get("kp", 0),
-            "poster": f.get("poster", {}).get("url"),
+            "votes": f.get("votes", {}).get("kp", 0) if isinstance(f.get("votes"), dict) else 0,
+            "poster": f.get("poster", {}).get("url") if isinstance(f.get("poster"), dict) else (f.get("poster") or None),
         }
-        for f in docs
+        for f in (docs or [])
     ]
+
+
+def _get_docs(data: dict) -> list:
+    """Из ответа API достаём список фильмов (docs / movies / data)."""
+    if not data:
+        return []
+    return data.get("docs") or data.get("movies") or data.get("data") or []
 
 
 def get_popular_now(limit: int = 12):
@@ -90,35 +103,40 @@ def get_popular_now(limit: int = 12):
     params = _movie_list_params(limit=limit)
     resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
-    data = resp.json()
-    return {"results": _docs_to_results(data.get("docs", []))}
+    data = resp.json() or {}
+    docs = _get_docs(data)
+    return {"results": _docs_to_results(docs[:limit])}
 
 
 def get_popular_movies(limit: int = 4):
     """Популярные фильмы — только type=movie, по голосам."""
-    params = _movie_list_params(limit=limit, type_filter="movie")
+    params = _movie_list_params(limit=limit * 2, type_filter="movie")
     resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
-    docs = resp.json().get("docs", [])
+    docs = _get_docs(resp.json() or {})
     if len(docs) < limit:
         params = _movie_list_params(limit=50)
         resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
         resp.raise_for_status()
-        docs = [d for d in resp.json().get("docs", []) if d.get("type") == "movie"][:limit]
+        docs = [d for d in _get_docs(resp.json() or {}) if d.get("type") == "movie"][:limit]
+    else:
+        docs = docs[:limit]
     return {"results": _docs_to_results(docs)}
 
 
 def get_popular_series(limit: int = 4):
     """Популярные сериалы — только type=tv-series, по голосам."""
-    params = _movie_list_params(limit=limit, type_filter="tv-series")
+    params = _movie_list_params(limit=limit * 2, type_filter="tv-series")
     resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
-    docs = resp.json().get("docs", [])
+    docs = _get_docs(resp.json() or {})
     if len(docs) < limit:
         params = _movie_list_params(limit=50)
         resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
         resp.raise_for_status()
-        docs = [d for d in resp.json().get("docs", []) if d.get("type") == "tv-series"][:limit]
+        docs = [d for d in _get_docs(resp.json() or {}) if d.get("type") == "tv-series"][:limit]
+    else:
+        docs = docs[:limit]
     return {"results": _docs_to_results(docs)}
 
 
@@ -130,8 +148,7 @@ def get_coming_soon(limit: int = 4):
     params = _movie_list_params(limit=limit * 2, year=f"{current_year}-{next_year}")
     resp = requests.get(KINOPOISK_API_URL, headers=_headers(), params=params, timeout=KINOPOISK_TIMEOUT)
     resp.raise_for_status()
-    data = resp.json()
-    docs = data.get("docs", [])[:limit]
+    docs = _get_docs(resp.json() or {})[:limit]
     return {"results": _docs_to_results(docs)}
 
 
