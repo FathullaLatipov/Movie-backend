@@ -4,10 +4,12 @@
 """
 import os
 import time
+from datetime import date
 from urllib.parse import quote
 import requests
 
-TMDB_BASE = "https://api.themoviedb.org/3"
+# Без завершающего слэша, чтобы не было двойного слэша в путях
+TMDB_BASE = (os.environ.get("TMDB_BASE") or "https://api.themoviedb.org/3").rstrip("/")
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 FILMS_STORAGE_BASE = os.environ.get("FILMS_STORAGE_BASE", "https://flcksbr.top/film/")
 # Таймаут в секундах; можно задать TMDB_TIMEOUT=30 в .env при медленной сети
@@ -76,12 +78,14 @@ def _results(items: list, is_tv: bool = False) -> list:
     return out
 
 
-def _get(url: str, params: dict):
-    """Запрос к TMDB с повторами при таймауте/соединении."""
+def _get(url: str, params: dict, on_404_return_empty: bool = False):
+    """Запрос к TMDB с повторами при таймауте/соединении. При 404 можно вернуть {} без исключения."""
     last_error = None
     for attempt in range(TMDB_RETRIES):
         try:
             resp = requests.get(url, params=params, timeout=TMDB_TIMEOUT, verify=_ssl_verify())
+            if resp.status_code == 404 and on_404_return_empty:
+                return {}
             resp.raise_for_status()
             return resp.json() or {}
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
@@ -103,7 +107,7 @@ def get_popular_now(limit: int = 12):
     """Популярное сейчас — тренды за день (фильмы + сериалы)."""
     if not _api_key():
         return _empty_results()
-    data = _get(f"{TMDB_BASE}/trending/all/day", _params())
+    data = _get(f"{TMDB_BASE}/trending/all/day", _params(), on_404_return_empty=True)
     items = data.get("results") or []
     out = []
     for x in items[:limit]:
@@ -120,7 +124,7 @@ def get_popular_movies(limit: int = 4):
     """Популярные фильмы."""
     if not _api_key():
         return _empty_results()
-    data = _get(f"{TMDB_BASE}/movie/popular", _params({"page": 1}))
+    data = _get(f"{TMDB_BASE}/movie/popular", _params({"page": 1}), on_404_return_empty=True)
     items = data.get("results", [])[:limit]
     return {"results": _results(items, is_tv=False)}
 
@@ -129,17 +133,24 @@ def get_popular_series(limit: int = 4):
     """Популярные сериалы."""
     if not _api_key():
         return _empty_results()
-    data = _get(f"{TMDB_BASE}/tv/popular", _params({"page": 1}))
+    data = _get(f"{TMDB_BASE}/tv/popular", _params({"page": 1}), on_404_return_empty=True)
     items = data.get("results", [])[:limit]
     return {"results": _results(items, is_tv=True)}
 
 
 def get_coming_soon(limit: int = 4):
-    """Скоро в кино — премьеры (TMDB movie/upcoming)."""
+    """Скоро в кино — премьеры (TMDB movie/upcoming). При 404 — fallback на discover с датой выхода."""
     if not _api_key():
         return _empty_results()
-    data = _get(f"{TMDB_BASE}/movie/upcoming", _params({"page": 1}))
-    items = data.get("results", [])[:limit]
+    data = _get(f"{TMDB_BASE}/movie/upcoming", _params({"page": 1}), on_404_return_empty=True)
+    if not data:
+        today = date.today().isoformat()
+        data = _get(
+            f"{TMDB_BASE}/discover/movie",
+            _params({"page": 1, "sort_by": "popularity.desc", "primary_release_date.gte": today}),
+            on_404_return_empty=True,
+        )
+    items = (data or {}).get("results", [])[:limit]
     return {"results": _results(items, is_tv=False)}
 
 
