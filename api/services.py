@@ -3,13 +3,16 @@
 Документация: https://developer.themoviedb.org/docs
 """
 import os
+import time
 from urllib.parse import quote
 import requests
 
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 FILMS_STORAGE_BASE = os.environ.get("FILMS_STORAGE_BASE", "https://flcksbr.top/film/")
-TMDB_TIMEOUT = 15
+# Таймаут в секундах; можно задать TMDB_TIMEOUT=30 в .env при медленной сети
+TMDB_TIMEOUT = int(os.environ.get("TMDB_TIMEOUT", "25"))
+TMDB_RETRIES = 3  # повторов при ReadTimeout/ConnectionError
 
 def _api_key():
     return (os.environ.get("TMDB_API_KEY") or os.environ.get("TMDB_API_KEY_V3") or "").strip()
@@ -74,9 +77,19 @@ def _results(items: list, is_tv: bool = False) -> list:
 
 
 def _get(url: str, params: dict):
-    resp = requests.get(url, params=params, timeout=TMDB_TIMEOUT, verify=_ssl_verify())
-    resp.raise_for_status()
-    return resp.json() or {}
+    """Запрос к TMDB с повторами при таймауте/соединении."""
+    last_error = None
+    for attempt in range(TMDB_RETRIES):
+        try:
+            resp = requests.get(url, params=params, timeout=TMDB_TIMEOUT, verify=_ssl_verify())
+            resp.raise_for_status()
+            return resp.json() or {}
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_error = e
+            if attempt < TMDB_RETRIES - 1:
+                time.sleep(1)
+            continue
+    raise last_error
 
 
 # --- Блоки главной ---
